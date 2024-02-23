@@ -30,6 +30,7 @@ from craft_providers import bases
 from craft_providers.actions.snap_installer import Snap
 from craft_providers.lxd import LXDProvider
 from craft_providers.multipass import MultipassProvider
+from overrides import override  # type: ignore[reportUnknownVariableType]
 
 from craft_application import util
 from craft_application.services import base
@@ -141,6 +142,13 @@ class ProviderService(base.ProjectService):
         use base names that don't align to a "distro:version" naming convention.
         """
         alias = bases.get_base_alias(base_name)
+        if type(alias) == bases.ubuntu.BuilddBaseAlias:
+            # These packages are required on the base system (provider) for
+            # the Package Repositories feature from Craft Archives to work.
+            # This is only doable here where we have access to the base, as
+            # this only applies to our Buildd images (i.e.; Ubuntu)
+            self.packages.extend(["gpg", "dirmngr"])
+
         base_class = bases.get_base_from_alias(alias)
         return base_class(
             alias=alias,
