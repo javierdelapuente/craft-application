@@ -18,6 +18,7 @@ import datetime
 import pathlib
 from unittest import mock
 
+import launchpadlib.errors
 import lazr.restfulclient.errors
 import lazr.restfulclient.resource
 import pytest
@@ -87,6 +88,25 @@ def test_new_repository(
     # time zone the expiry time is still in the future.
     tz = datetime.timezone(datetime.timedelta(hours=14))
     assert expiry > datetime.datetime.now(tz=tz)
+
+
+def test_new_repository_gets_with_conflict(
+    monkeypatch, tmp_path, remote_build_service, mock_lp_project
+):
+    remote_build_service._lp_project = mock_lp_project
+    remote_build_service.lp.new_repository = mock.Mock(
+        side_effect = launchpadlib.errors.Conflict(content=None, response=None))
+    remote_build_service.lp.get_repository = mock.Mock(side_effect = ValueError())
+
+    with pytest.raises(ValueError):
+        remote_build_service._new_repository(tmp_path)
+
+    remote_build_service.lp.new_repository.assert_called_once_with(
+        remote_build_service._name, project=remote_build_service._lp_project.name
+    )
+    remote_build_service.lp.get_repository.assert_called_once_with(
+        name=remote_build_service._name, project=remote_build_service._lp_project.name
+    )
 
 
 def test_not_setup(remote_build_service):

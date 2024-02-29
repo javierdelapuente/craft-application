@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, cast
 from urllib import parse
 
 import craft_cli
+import launchpadlib.errors
 import platformdirs
 
 from craft_application import errors, launchpad, models
@@ -226,9 +227,14 @@ class RemoteBuildService(base.AppService):
         """Create a repository on the local machine and on Launchpad."""
         work_tree = WorkTree(self._app.name, self._name, project_dir)
         work_tree.init_repo()
-        lp_repository = launchpad.models.GitRepository.new(
-            self.lp, self._name, target=self._lp_project.name
-        )
+        try:
+            lp_repository = self.lp.new_repository(
+                self._name, project=self._lp_project.name
+            )
+        except launchpadlib.errors.Conflict:
+            lp_repository = self.lp.get_repository(
+                name=self._name, project=self._lp_project.name
+            )
 
         token = lp_repository.get_access_token(
             f"{self._app.name} {self._app.version} remote build",
@@ -257,10 +263,14 @@ class RemoteBuildService(base.AppService):
         repository: launchpad.models.GitRepository,
         **kwargs: Any,  # noqa: ANN401
     ) -> launchpad.models.Recipe:
-        """Create a new recipe."""
-        return self.RecipeClass.new(
-            self.lp, name, self.lp.username, git_ref=repository.git_https_url, **kwargs
-        )
+        """Create a new recipe, deleting the original if needed."""
+        try:
+            return self.RecipeClass.new(
+                self.lp, name, self.lp.username, git_ref=repository.git_https_url, **kwargs
+            )
+        except launchpadlib.errors.Conflict:
+            self._get_recipe().delete()
+            return self._new_recipe(name, repository, **kwargs)
 
     def _get_recipe(self) -> launchpad.models.Recipe:
         """Get a build for this application by its build ID.
