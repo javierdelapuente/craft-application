@@ -15,10 +15,13 @@
 """Remote build utilities."""
 from __future__ import annotations
 
+import base64
+import platform
 import shutil
 import stat
 from collections.abc import Callable, Iterable
 from functools import partial
+import hashlib
 from hashlib import md5
 from pathlib import Path
 from typing import Any
@@ -48,7 +51,8 @@ def get_build_id(app_name: str, project_name: str, project_path: Path) -> str:
     """Get the build id for a project.
 
     The build id is formatted as `<app_name>-<project-name>-<hash>`.
-    The hash is a hash of all files in the project directory.
+    The hash is generated from the inode number, the owner's user ID, and the
+    machine name, to make a reproducible build ID for the same project.
 
     :param app_name: Name of the application.
     :param project_name: Name of the project.
@@ -56,48 +60,17 @@ def get_build_id(app_name: str, project_name: str, project_path: Path) -> str:
 
     :returns: The build id.
     """
-    project_hash = _compute_hash(project_path)
+    project_stat = project_path.stat()
+    project_properties = (
+        str(project_stat.st_ino),
+        str(project_stat.st_uid),
+        platform.node(),  # Make it unique to this machine
+    )
+    project_hash = hashlib.sha256(
+        "-".join(project_properties).encode(), usedforsecurity=False
+    ).hexdigest()[:32]
 
     return f"{app_name}-{project_name}-{project_hash}"
-
-
-def _compute_hash(directory: Path) -> str:
-    """Compute an md5 hash from the contents of the files in a directory.
-
-    If a file or its contents within the directory are modified, then the hash
-    will be different.
-
-    The hash may not be unique if the contents of one file are moved to another file
-    or if files are reorganized.
-
-    :returns: A string containing the md5 hash.
-
-    :raises FileNotFoundError: If the path is not a directory or does not exist.
-    """
-    if not directory.exists():
-        raise FileNotFoundError(
-            f"Could not compute hash because directory {str(directory.absolute())} "
-            "does not exist."
-        )
-    if not directory.is_dir():
-        raise FileNotFoundError(
-            f"Could not compute hash because {str(directory.absolute())} is not "
-            "a directory."
-        )
-
-    files = sorted([file for file in Path().glob("**/*") if file.is_file()])
-    hashes: list[str] = []
-
-    for file_path in files:
-        md5_hash = md5()  # noqa: S324 (insecure-hash-function)
-        with file_path.open("rb") as file:
-            # read files in chunks in case they are large
-            for block in iter(partial(file.read, 4096), b""):
-                md5_hash.update(block)
-        hashes.append(md5_hash.hexdigest())
-
-    all_hashes = "".join(hashes).encode()
-    return md5(all_hashes).hexdigest()  # noqa: S324 (insecure-hash-function)
 
 
 def humanize_list(
