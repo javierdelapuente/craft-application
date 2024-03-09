@@ -274,6 +274,8 @@ class Application:
                 raise errors.InvalidPlatformError(platform, list(all_platforms.keys()))
             build_for = all_platforms[platform].build_for
 
+        build_for = build_for or self._build_plan[0].build_for
+
         # validate project grammar
         GrammarAwareProject.validate_grammar(yaml_data)
 
